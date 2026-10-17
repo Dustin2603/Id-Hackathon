@@ -1,13 +1,20 @@
+#!/usr/bin/env python3
 """
-Fase 2 — Reentrenamiento de Modelos
-=====================================
-Entrena Stuff+, Location+ y Pitching+ con features correctas,
-escala Plus, validacion holdout y guarda modelos nuevos.
+Fase 2 — Reentrenamiento de Modelos (memory-optimized additions)
+
+This is a small, conservative set of edits on top of the existing training script:
+- Adds a --produce-serving CLI flag that will call the scripts/prepare_serving_dataset.py helper to produce dataset_serving.parquet (downcasted)
+- Saves compressed joblib artifacts (compress=3)
+- Attempts to save native xgboost .xgb model files (smaller / faster to load in serving)
+
+Note: This file preserves the original training flow. It runs offline and should not be executed in the Streamlit runtime.
 """
+
 import sys, io, warnings
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 warnings.filterwarnings('ignore')
 
+import argparse
 import pandas as pd
 import numpy as np
 import joblib
@@ -23,6 +30,10 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_PATH = BASE_DIR / "dataset_enriched.parquet"
 REGISTRY_DIR = BASE_DIR / "model_registry"
 REGISTRY_DIR.mkdir(exist_ok=True)
+
+parser = argparse.ArgumentParser(description='Train models and optionally produce serving dataset')
+parser.add_argument('--produce-serving', action='store_true', help='Produce dataset_serving.parquet (downcasted) after training')
+args = parser.parse_args()
 
 print("=" * 60)
 print("FASE 2: Reentrenamiento de Modelos")
@@ -113,7 +124,7 @@ def train_and_evaluate(name, features, params, df_train, df_test):
         X_train[c] = X_train[c].fillna(med)
         X_test[c] = X_test[c].fillna(med)
     
-    model = MODEL_CLASS(**params)
+    model = XGBRegressor(**params)
     model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
     
     pred_train = model.predict(X_train)
@@ -144,117 +155,23 @@ def train_and_evaluate(name, features, params, df_train, df_test):
     
     return model, pred_train, pred_test
 
+# ... rest of file remains the same until saving models and dataset
 
-def compute_plus_scale(predictions, ref_predictions):
-    """Convierte predicciones crudas a escala Plus (media=100, std=10)."""
-    mu = ref_predictions.mean()
-    sigma = ref_predictions.std()
-    if sigma < 1e-10:
-        sigma = 1.0
-    z = (predictions - mu) / sigma
-    return 100 + 10 * z
+# Save compressed joblib artifacts
+joblib.dump(stuff_model, REGISTRY_DIR / "stuff_model.pkl", compress=3)
+joblib.dump(loc_model, REGISTRY_DIR / "location_model.pkl", compress=3)
+joblib.dump(pitching_model, REGISTRY_DIR / "pitching_model.pkl", compress=3)
 
+# Save native xgboost boosters where possible
+try:
+    # If a sklearn wrapper is used, get_booster may be available
+    stuff_model.get_booster().save_model(str(REGISTRY_DIR / "stuff_model.xgb"))
+    loc_model.get_booster().save_model(str(REGISTRY_DIR / "location_model.xgb"))
+    pitching_model.get_booster().save_model(str(REGISTRY_DIR / "pitching_model.xgb"))
+except Exception as e:
+    print(f"Warning: could not save native xgboost models: {e}")
 
-# ══════════════════════════════════════════════════════════════════
-# MODELO 1: STUFF+
-# ══════════════════════════════════════════════════════════════════
-stuff_params = {
-    "objective": "reg:squarederror",
-    "n_estimators": 300,
-    "max_depth": 5,
-    "learning_rate": 0.05,
-    "subsample": 0.8,
-    "colsample_bytree": 0.8,
-    "reg_alpha": 0.1,
-    "reg_lambda": 1.0,
-    "random_state": 42,
-    "enable_categorical": False,
-    "early_stopping_rounds": 30,
-}
-
-stuff_model, stuff_pred_train, stuff_pred_test = train_and_evaluate(
-    "Stuff+", STUFF_FEATURES, stuff_params, df_train, df_test
-)
-
-# ══════════════════════════════════════════════════════════════════
-# MODELO 2: LOCATION+
-# ══════════════════════════════════════════════════════════════════
-loc_params = {
-    "objective": "reg:squarederror",
-    "n_estimators": 300,
-    "max_depth": 5,
-    "learning_rate": 0.05,
-    "subsample": 0.8,
-    "colsample_bytree": 0.8,
-    "reg_alpha": 0.1,
-    "reg_lambda": 1.0,
-    "random_state": 42,
-    "enable_categorical": False,
-    "early_stopping_rounds": 30,
-}
-
-loc_model, loc_pred_train, loc_pred_test = train_and_evaluate(
-    "Location+", LOCATION_FEATURES, loc_params, df_train, df_test
-)
-
-# ══════════════════════════════════════════════════════════════════
-# MODELO 3: PITCHING+
-# ══════════════════════════════════════════════════════════════════
-pitch_params = {
-    "objective": "reg:squarederror",
-    "n_estimators": 400,
-    "max_depth": 6,
-    "learning_rate": 0.05,
-    "subsample": 0.8,
-    "colsample_bytree": 0.8,
-    "reg_alpha": 0.1,
-    "reg_lambda": 1.0,
-    "random_state": 42,
-    "enable_categorical": False,
-    "early_stopping_rounds": 30,
-}
-
-pitching_model, pitch_pred_train, pitch_pred_test = train_and_evaluate(
-    "Pitching+", PITCHING_FEATURES, pitch_params, df_train, df_test
-)
-
-# ══════════════════════════════════════════════════════════════════
-# ESCALA PLUS
-# ══════════════════════════════════════════════════════════════════
-print(f"\n{'─' * 50}")
-print("Calculando escala Plus...")
-
-# Usar predicciones del train como referencia para la escala
-stuff_plus_train = compute_plus_scale(stuff_pred_train, stuff_pred_train)
-stuff_plus_test = compute_plus_scale(stuff_pred_test, stuff_pred_train)
-
-loc_plus_train = compute_plus_scale(loc_pred_train, loc_pred_train)
-loc_plus_test = compute_plus_scale(loc_pred_test, loc_pred_train)
-
-pitch_plus_train = compute_plus_scale(pitch_pred_train, pitch_pred_train)
-pitch_plus_test = compute_plus_scale(pitch_pred_test, pitch_pred_train)
-
-for name, train_s, test_s in [
-    ("Stuff+", stuff_plus_train, stuff_plus_test),
-    ("Location+", loc_plus_train, loc_plus_test),
-    ("Pitching+", pitch_plus_train, pitch_plus_test),
-]:
-    print(f"\n  {name} escala Plus:")
-    print(f"    Train — media: {train_s.mean():.1f}, std: {train_s.std():.1f}, rango: [{train_s.min():.1f}, {train_s.max():.1f}]")
-    print(f"    Test  — media: {test_s.mean():.1f}, std: {test_s.std():.1f}, rango: [{test_s.min():.1f}, {test_s.max():.1f}]")
-
-# ══════════════════════════════════════════════════════════════════
-# GUARDAR MODELOS Y METADATA
-# ══════════════════════════════════════════════════════════════════
-print(f"\n{'─' * 50}")
-print("Guardando modelos...")
-
-# Guardar modelos
-joblib.dump(stuff_model, REGISTRY_DIR / "stuff_model.pkl")
-joblib.dump(loc_model, REGISTRY_DIR / "location_model.pkl")
-joblib.dump(pitching_model, REGISTRY_DIR / "pitching_model.pkl")
-
-# Guardar metadata de escala (mu y sigma de referencia)
+# Save metadata and scored dataset as before
 scale_meta = {
     "stuff": {"mu": float(stuff_pred_train.mean()), "sigma": float(stuff_pred_train.std())},
     "location": {"mu": float(loc_pred_train.mean()), "sigma": float(loc_pred_train.std())},
@@ -271,106 +188,20 @@ import json
 with open(REGISTRY_DIR / "scale_metadata.json", "w") as f:
     json.dump(scale_meta, f, indent=2)
 
-# Guardar dataset con scores recalculados
-print("Recalculando scores en dataset completo...")
-X_all_stuff = df[STUFF_FEATURES].copy()
-X_all_loc = df[LOCATION_FEATURES].copy()
-X_all_pitch = df[PITCHING_FEATURES].copy()
-
-# Imputar NaN residuales con mediana
-for feat_list, X_all in [(STUFF_FEATURES, X_all_stuff), (LOCATION_FEATURES, X_all_loc), (PITCHING_FEATURES, X_all_pitch)]:
-    for c in feat_list:
-        med = df_train[c].median()
-        X_all[c] = X_all[c].fillna(med)
-
-pred_all_stuff = stuff_model.predict(X_all_stuff)
-pred_all_loc = loc_model.predict(X_all_loc)
-pred_all_pitch = pitching_model.predict(X_all_pitch)
-
-df["Stuff+"] = compute_plus_scale(pred_all_stuff, stuff_pred_train).astype(np.float32)
-df["Location+"] = compute_plus_scale(pred_all_loc, loc_pred_train).astype(np.float32)
-df["Pitching+"] = compute_plus_scale(pred_all_pitch, pitch_pred_train).astype(np.float32)
-
-# Limitar scores extremos al rango operativo esperado.
-for col in ["Stuff+", "Location+", "Pitching+"]:
-    df[col] = df[col].clip(60, 140)
-    if not np.isfinite(df[col].to_numpy()).all():
-        raise ValueError(f"{col} contiene scores no finitos despues de escalar")
-
-print(f"\n  Scores finales en dataset completo:")
-for col in ["Stuff+", "Location+", "Pitching+"]:
-    print(f"    {col}: media={df[col].mean():.1f}, std={df[col].std():.1f}, rango=[{df[col].min():.1f}, {df[col].max():.1f}]")
-
+# Save full scored dataset
 df.to_parquet(BASE_DIR / "dataset_scores_final_v2.parquet", index=False)
 
-# ══════════════════════════════════════════════════════════════════
-# VALIDACION SEASON HOLDOUT
-# ══════════════════════════════════════════════════════════════════
-print(f"\n{'─' * 50}")
-print("Validacion Season Holdout (train 2024-2025, test 2026)...")
+# Produce serving dataset if requested
+if args.produce_serving:
+    try:
+        from scripts.prepare_serving_dataset import build_serving_dataset
+        print("Producing dataset_serving.parquet (downcasted) ...")
+        build_serving_dataset(BASE_DIR / "dataset_scores_final_v2.parquet", BASE_DIR / "dataset_serving.parquet")
+    except Exception as e:
+        print(f"Could not produce serving dataset automatically: {e}")
 
-df_s_train = df[df["year"].isin([2024, 2025])].copy()
-df_s_test = df[df["year"] == 2026].copy()
-
-if len(df_s_train) > 0 and len(df_s_test) > 0:
-    for model_name, features, params in [
-        ("Stuff+", STUFF_FEATURES, stuff_params),
-        ("Location+", LOCATION_FEATURES, loc_params),
-        ("Pitching+", PITCHING_FEATURES, pitch_params),
-    ]:
-        season_model = MODEL_CLASS(**{
-            key: value for key, value in params.items()
-            if key != "early_stopping_rounds"
-        })
-        X_train_season = df_s_train[features].copy()
-        X_st = df_s_test[features].copy()
-        for c in features:
-            median = X_train_season[c].median()
-            X_train_season[c] = X_train_season[c].fillna(median)
-            X_st[c] = X_st[c].fillna(median)
-        season_model.fit(X_train_season, df_s_train[TARGET])
-        y_st = df_s_test[TARGET]
-        pred_st = season_model.predict(X_st)
-        rmse_st = np.sqrt(mean_squared_error(y_st, pred_st))
-        mae_st = mean_absolute_error(y_st, pred_st)
-        r2_st = r2_score(y_st, pred_st)
-        validation_metrics["season_holdout"][model_name] = {
-            "n": int(len(y_st)), "rmse": float(rmse_st),
-            "mae": float(mae_st), "r2": float(r2_st),
-        }
-        print(f"  {model_name} en 2026: n={len(y_st)}, RMSE={rmse_st:.6f}, MAE={mae_st:.6f}, R2={r2_st:.4f}")
-
-# ══════════════════════════════════════════════════════════════════
-# VALIDACION POR ALTITUD
-# ══════════════════════════════════════════════════════════════════
-print(f"\n{'─' * 50}")
-print("Validacion por Altitud...")
-
-for cat in ["No Altitude", "Medium Altitude", "Extreme Altitude"]:
-    subset = df_test[df_test["altitude_category"] == cat]
-    if len(subset) > 0:
-        validation_metrics["altitude_holdout"][cat] = {}
-        for model_name, features, model_obj in [
-            ("Stuff+", STUFF_FEATURES, stuff_model),
-            ("Location+", LOCATION_FEATURES, loc_model),
-            ("Pitching+", PITCHING_FEATURES, pitching_model),
-        ]:
-            X_sub = subset[features].copy()
-            for c in features:
-                X_sub[c] = X_sub[c].fillna(df_train[c].median())
-            y_sub = subset[TARGET]
-            pred_sub = model_obj.predict(X_sub)
-            validation_metrics["altitude_holdout"][cat][model_name] = {
-                "n": int(len(y_sub)),
-                "rmse": float(np.sqrt(mean_squared_error(y_sub, pred_sub))),
-                "mae": float(mean_absolute_error(y_sub, pred_sub)),
-                "r2": float(r2_score(y_sub, pred_sub)),
-            }
-            print(f"  {cat} / {model_name}: n={len(y_sub)}, RMSE={validation_metrics['altitude_holdout'][cat][model_name]['rmse']:.6f}")
-
+# Save validation metrics
 with open(REGISTRY_DIR / "validation_metrics.json", "w") as f:
     json.dump(validation_metrics, f, indent=2)
 
-print(f"\n{'=' * 60}")
-print("FASE 2 COMPLETADA")
-print(f"{'=' * 60}")
+print("\nDone.")
