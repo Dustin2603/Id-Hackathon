@@ -1,0 +1,89 @@
+{
+  "stuff": {
+    "mu": -0.029758259654045105,
+    "sigma": 0.02384083904325962
+  },
+  "location": {
+    "mu": -0.029764989390969276,
+    "sigma": 0.04690565541386604
+  },
+  "pitching": {
+    "mu": -0.029746847227215767,
+    "sigma": 0.04831795021891594
+  },
+  "features": {
+    "stuff": [
+      "RelSpeed",
+      "SpinRate",
+      "SpinAxis",
+      "InducedVertBreak",
+      "HorzBreak",
+      "VertBreak",
+      "EffectiveVelo",
+      "SpeedDrop",
+      "RelHeight",
+      "RelSide",
+      "Extension",
+      "VertRelAngle",
+      "HorzRelAngle",
+      "AutoPitchType_Num",
+      "PitcherThrows_Num",
+      "BatterSide_Num",
+      "velo_diff_vs_fb",
+      "ivb_diff_vs_fb",
+      "hb_diff_vs_fb"
+    ],
+    "location": [
+      "PlateLocHeight",
+      "PlateLocSide",
+      "in_strike_zone",
+      "Balls",
+      "Strikes",
+      "AutoPitchType_Num",
+      "PitcherThrows_Num",
+      "BatterSide_Num"
+    ],
+    "pitching": [
+      "RelSpeed",
+      "SpinRate",
+      "SpinAxis",
+      "InducedVertBreak",
+      "HorzBreak",
+      "VertBreak",
+      "EffectiveVelo",
+      "SpeedDrop",
+      "RelHeight",
+      "RelSide",
+      "Extension",
+      "VertRelAngle",
+      "HorzRelAngle",
+      "PlateLocHeight",
+      "PlateLocSide",
+      "in_strike_zone",
+      "Balls",
+      "Strikes",
+      "AutoPitchType_Num",
+      "PitcherThrows_Num",
+      "BatterSide_Num",
+      "velo_diff_vs_fb",
+      "ivb_diff_vs_fb",
+      "hb_diff_vs_fb",
+      "effective_distance",
+      "perceived_velo_factor"
+    ]
+  },
+  "pitch_type_map": {
+    "Four-Seam": 0,
+    "Sinker": 1,
+    "Cutter": 2,
+    "Changeup": 3,
+    "Slider": 4,
+    "Curveball": 5,
+    "Splitter": 6,
+    "Sweeper": 7,
+    "Other": 8,
+    "OneSeamFastBall": 0,
+    "TwoSeamFastBall": 1,
+    "Knuckleball": 8
+  }
+}

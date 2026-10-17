@@ -1,0 +1,41 @@
+# Python bytecode and test/tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local Python environments
+.venv/
+.venv-*/
+venv/
+env/
+
+# Local editor and OS files
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Generated or private datasets (keep dictionaries and documentation)
+/dataset_enriched.parquet
+/dataset_scores_final*.parquet
+/Dataset Hackathon/*.parquet
+/Dataset Hackathon/*.rds
+/Dataset Hackathon/*.pkl
+
+# Trained model binaries; keep JSON metadata and metrics
+/*.pkl
+/model_registry/*.pkl
+
+# Generated analysis outputs
+/plots/*.png
+/plots/*.csv
