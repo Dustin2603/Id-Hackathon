@@ -9,6 +9,9 @@ import pandas as pd
 import numpy as np
 import joblib
 import json
+import shutil
+import tempfile
+import urllib.request
 import plotly.graph_objects as go
 import plotly.express as px
 from pathlib import Path
@@ -62,9 +65,23 @@ def load_data():
         BASE_DIR / "dataset_enriched.parquet",
     ]
     path = next((candidate for candidate in candidates if candidate.exists()), None)
-    if path is None:
-        raise FileNotFoundError("No se encontro un dataset parquet del proyecto")
-    data = pd.read_parquet(path)
+    if path is not None:
+        data = pd.read_parquet(path)
+    else:
+        try:
+            dataset_url = st.secrets["DATASET_URL"]
+        except Exception as exc:
+            raise RuntimeError(
+                "No hay dataset local. Configura DATASET_URL en Streamlit Cloud > Settings > Secrets."
+            ) from exc
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            downloaded_path = Path(temp_dir) / "dataset_scores_final_v2.parquet"
+            with urllib.request.urlopen(dataset_url, timeout=180) as response:
+                with downloaded_path.open("wb") as output_file:
+                    shutil.copyfileobj(response, output_file)
+            data = pd.read_parquet(downloaded_path)
+
     for score_column in ["Stuff+", "Location+", "Pitching+"]:
         if score_column in data.columns:
             data[score_column] = pd.to_numeric(data[score_column], errors="coerce").clip(60, 140)

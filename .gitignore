@@ -33,9 +33,7 @@ desktop.ini
 /Dataset Hackathon/*.pkl
 
 # Trained model binaries; keep JSON metadata and metrics
+# Keep generated binary artifacts out of Git history.
 /*.pkl
 /model_registry/*.pkl
 
-# Generated analysis outputs
-/plots/*.png
-/plots/*.csv
