@@ -12,6 +12,7 @@ import json
 import plotly.graph_objects as go
 import plotly.express as px
 from pathlib import Path
+import gc
 
 # ── Configuracion de pagina ──────────────────────────────────────
 st.set_page_config(
@@ -42,17 +43,42 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════��[...]
 # CARGA DE MODELOS Y DATOS
-# ══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════��[...]
 @st.cache_resource
 def load_models():
-    stuff_model = joblib.load(REGISTRY_DIR / "stuff_model.pkl")
-    loc_model = joblib.load(REGISTRY_DIR / "location_model.pkl")
-    pitching_model = joblib.load(REGISTRY_DIR / "pitching_model.pkl")
-    with open(REGISTRY_DIR / "scale_metadata.json") as f:
-        scale_meta = json.load(f)
-    return stuff_model, loc_model, pitching_model, scale_meta
+    """Load model artifacts from model_registry and cache them as a Streamlit resource.
+
+    This function is decorated with @st.cache_resource so that models are loaded once
+    per server process and reused across user sessions, avoiding repeated memory-heavy
+    deserialization that can cause OOM on Streamlit Community Cloud.
+    """
+    try:
+        stuff_model = joblib.load(REGISTRY_DIR / "stuff_model.pkl")
+        loc_model = joblib.load(REGISTRY_DIR / "location_model.pkl")
+        pitching_model = joblib.load(REGISTRY_DIR / "pitching_model.pkl")
+        with open(REGISTRY_DIR / "scale_metadata.json") as f:
+            scale_meta = json.load(f)
+
+        # Run a GC pass after loading large artifacts to reduce peak memory usage.
+        gc.collect()
+
+        return stuff_model, loc_model, pitching_model, scale_meta
+
+    except MemoryError as me:
+        # Surface a clear, actionable error for OOM situations.
+        raise MemoryError(
+            "MemoryError while loading model artifacts. "
+            "This often indicates the server doesn't have enough RAM to hold the models; "
+            "consider using smaller models or upgrading the hosting plan. Details: "
+            + str(me)
+        )
+    except FileNotFoundError as fnf:
+        raise FileNotFoundError(f"Model artifact not found in model_registry: {fnf}")
+    except Exception as e:
+        # Re-raise as RuntimeError to make it explicit in the outer error handler.
+        raise RuntimeError(f"Unexpected error loading models: {e}")
 
 
 @st.cache_data
@@ -169,22 +195,22 @@ def check_extrapolation(values_dict):
     return warnings_list
 
 
-# ══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════�[...]
 # HEADER
-# ══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════�[...]
 st.title("Simulador de Calidad de Pitcheo")
 st.markdown("**Diablos Rojos del Mexico 2026** | Hackathon ISAC — Stuff+, Location+, Pitching+")
 
-# ══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════�[...]
 # TABS
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════���════════════════════�[...]
 tab_sim, tab_altitude, tab_explorer, tab_metrics = st.tabs([
     "Simulador", "Analisis de Altitud", "Explorador de Datos", "Metricas del Sistema"
 ])
 
-# ══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════�[...]
 # TAB 1: SIMULADOR
-# ══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════�[...]
 with tab_sim:
     # ── Sidebar: Controles ───────────────────────────────────────
     st.sidebar.header("Controles del Lanzamiento")
@@ -489,10 +515,9 @@ with tab_sim:
     except Exception as e:
         st.warning(f"No se pudo calcular SHAP: {e}")
 
-
-# ══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════�[...]
 # TAB 2: ANALISIS DE ALTITUD
-# ══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════�[...]
 with tab_altitude:
     st.subheader("Comparacion CDMX (2,240 msnm) vs. Nivel del Mar")
     st.markdown("""
@@ -521,7 +546,6 @@ with tab_altitude:
             )
             fig_h1.add_hline(y=0, line_dash="dash", line_color="white", opacity=0.5)
             st.plotly_chart(fig_h1, use_container_width=True)
-            st.caption("Rojo = p < 0.05; Gris = no significativo")
 
         with col_h2:
             st.markdown("**Delta HB (CDMX - No Altitude) por tipo**")
@@ -565,9 +589,9 @@ with tab_altitude:
         st.image(str(img_path2), use_container_width=True)
 
 
-# ══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════�[...]
 # TAB 3: EXPLORADOR DE DATOS
-# ══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════�[...]
 with tab_explorer:
     st.subheader("Explorador de Datos y Perfiles")
 
@@ -615,9 +639,9 @@ with tab_explorer:
         st.dataframe(df_scores.head(200), use_container_width=True)
 
 
-# ══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════�[...]
 # TAB 4: METRICAS DEL SISTEMA
-# ══════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════�[...]
 with tab_metrics:
     st.subheader("Metricas de Validacion del Sistema")
 
